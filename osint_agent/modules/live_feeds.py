@@ -16,6 +16,8 @@ import feedparser
 import pandas as pd
 import requests
 
+from osint_agent.modules.common_points import build_common_points_from_frames
+
 
 DEFAULT_TIMEOUT = 25
 DEFAULT_USER_AGENT = "OSINTResearchAgent/1.0 (+legal-public-intel-only)"
@@ -38,6 +40,7 @@ class LiveFeedFetchResult:
     events_df: pd.DataFrame
     keyword_feed_df: pd.DataFrame
     raw_items_df: pd.DataFrame
+    common_points_df: pd.DataFrame
     errors: list[str]
 
 
@@ -504,11 +507,19 @@ def fetch_live_sources(
         combined_keyword = combined_keyword.drop_duplicates(subset=["timestamp", "source", "content"]).reset_index(
             drop=True
         )
+    common_points_df = build_common_points_from_frames(
+        events_df=combined_events,
+        keyword_feed_df=combined_keyword,
+        pages_df=combined_raw,
+        min_support=2,
+        top_n=40,
+    )
 
     return LiveFeedFetchResult(
         events_df=combined_events if not combined_events.empty else _empty_events_df(),
         keyword_feed_df=combined_keyword if not combined_keyword.empty else _empty_keyword_df(),
         raw_items_df=combined_raw if not combined_raw.empty else _empty_raw_df(),
+        common_points_df=common_points_df,
         errors=errors,
     )
 
@@ -719,9 +730,17 @@ def fetch_web_scrape_sources(
     )
     events_df = web_items_to_events(raw_df)
     keyword_df = web_items_to_keyword_feed(raw_df)
+    common_points_df = build_common_points_from_frames(
+        events_df=events_df,
+        keyword_feed_df=keyword_df,
+        pages_df=raw_df,
+        min_support=2,
+        top_n=40,
+    )
     return LiveFeedFetchResult(
         events_df=events_df if not events_df.empty else _empty_events_df(),
         keyword_feed_df=keyword_df if not keyword_df.empty else _empty_keyword_df(),
         raw_items_df=raw_df if not raw_df.empty else _empty_raw_df(),
+        common_points_df=common_points_df,
         errors=errors,
     )

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+import time
 
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 from dotenv import load_dotenv
 
@@ -46,6 +48,225 @@ def _read_uploaded_csv(uploaded_file, required_cols: list[str]) -> tuple[pd.Data
     return df, ""
 
 
+def _inject_ui_theme() -> None:
+    st.markdown(
+        """
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+        html, body, [class*="css"]  {
+            font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+        }
+        [data-testid="stAppViewContainer"] {
+            background:
+                radial-gradient(1200px 500px at -10% -20%, rgba(255,120,80,0.18), transparent),
+                radial-gradient(900px 420px at 110% -10%, rgba(0,190,210,0.18), transparent),
+                linear-gradient(180deg, #0f1318 0%, #121a22 45%, #131a20 100%);
+        }
+        [data-testid="stHeader"] {
+            background: rgba(0,0,0,0);
+        }
+        [data-testid="stSidebar"] {
+            background: linear-gradient(180deg, #17212b 0%, #121a22 100%);
+            border-right: 1px solid rgba(255,255,255,0.06);
+        }
+        .hero-shell {
+            border-radius: 20px;
+            padding: 18px 20px;
+            background: linear-gradient(120deg, rgba(255,113,67,0.18), rgba(34,203,233,0.16));
+            border: 1px solid rgba(255,255,255,0.12);
+            box-shadow: 0 12px 34px rgba(0,0,0,0.28);
+            margin-bottom: 0.7rem;
+            animation: glowPulse 3.8s ease-in-out infinite;
+        }
+        .hero-title {
+            font-size: 1.55rem;
+            font-weight: 700;
+            margin-bottom: 2px;
+            letter-spacing: 0.3px;
+            color: #f4f7ff;
+        }
+        .hero-sub {
+            color: rgba(236,242,255,0.88);
+            font-size: 0.96rem;
+        }
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin: 12px 0 2px 0;
+        }
+        .kpi-card {
+            border-radius: 14px;
+            padding: 11px 12px;
+            background: rgba(255,255,255,0.045);
+            border: 1px solid rgba(255,255,255,0.10);
+            backdrop-filter: blur(6px);
+            transform: translateY(0);
+            animation: floatUp 0.8s ease both;
+        }
+        .kpi-label {
+            font-size: 0.74rem;
+            color: rgba(223,231,244,0.8);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+        }
+        .kpi-value {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #f8fbff;
+            margin-top: 2px;
+        }
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            border: 1px solid rgba(255,255,255,0.13);
+            background: rgba(255,255,255,0.06);
+            color: #e7eef8;
+            margin-top: 8px;
+        }
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #20e27a;
+            box-shadow: 0 0 10px #20e27a;
+            animation: pulse 1.6s infinite;
+        }
+        .section-header {
+            font-size: 0.9rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.7px;
+            color: #f4f7ff;
+            margin-top: 0.35rem;
+        }
+        .mini-note {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.78rem;
+            color: rgba(227,236,250,0.75);
+        }
+        @keyframes pulse {
+            0% { transform: scale(0.95); opacity: 0.72; }
+            70% { transform: scale(1.15); opacity: 1; }
+            100% { transform: scale(0.95); opacity: 0.72; }
+        }
+        @keyframes glowPulse {
+            0% { box-shadow: 0 10px 26px rgba(0,0,0,0.22); }
+            50% { box-shadow: 0 14px 34px rgba(35,190,220,0.22); }
+            100% { box-shadow: 0 10px 26px rgba(0,0,0,0.22); }
+        }
+        @keyframes floatUp {
+            from { transform: translateY(6px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _activity_log(action: str) -> None:
+    logs = st.session_state.setdefault("activity_log", [])
+    ts = datetime.utcnow().strftime("%H:%M:%S")
+    logs.insert(0, f"{ts} UTC - {action}")
+    st.session_state["activity_log"] = logs[:20]
+
+
+def _dataset_readiness_pct() -> int:
+    ready_flags = [
+        not st.session_state.get("events_df", pd.DataFrame()).empty,
+        not st.session_state.get("keyword_feed_df", pd.DataFrame()).empty,
+        not st.session_state.get("tx_df", pd.DataFrame()).empty,
+        not st.session_state.get("asset_hashes_df", pd.DataFrame()).empty,
+        not st.session_state.get("observed_hashes_df", pd.DataFrame()).empty,
+    ]
+    return int((sum(1 for flag in ready_flags if flag) / len(ready_flags)) * 100)
+
+
+def _render_hero() -> None:
+    events_count = len(st.session_state.get("events_df", pd.DataFrame()))
+    feed_count = len(st.session_state.get("keyword_feed_df", pd.DataFrame()))
+    tx_count = len(st.session_state.get("tx_df", pd.DataFrame()))
+    readiness = _dataset_readiness_pct()
+
+    st.markdown(
+        f"""
+        <div class="hero-shell">
+            <div class="hero-title">OSINT Research Command Center</div>
+            <div class="hero-sub">Reactive workflow for ingestion, correlation, graphing, and AI-assisted research.</div>
+            <div class="kpi-grid">
+                <div class="kpi-card"><div class="kpi-label">Events</div><div class="kpi-value">{events_count}</div></div>
+                <div class="kpi-card"><div class="kpi-label">Feed Rows</div><div class="kpi-value">{feed_count}</div></div>
+                <div class="kpi-card"><div class="kpi-label">Transactions</div><div class="kpi-value">{tx_count}</div></div>
+                <div class="kpi-card"><div class="kpi-label">Readiness</div><div class="kpi-value">{readiness}%</div></div>
+            </div>
+            <div class="chip"><span class="dot"></span> Reactive telemetry active</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_reactive_timeline() -> None:
+    events_df = st.session_state.get("events_df", pd.DataFrame())
+    feed_df = st.session_state.get("keyword_feed_df", pd.DataFrame())
+
+    timeline_rows: list[dict[str, int | str]] = []
+    if not events_df.empty and "timestamp" in events_df.columns:
+        tmp = events_df.copy()
+        tmp["timestamp"] = pd.to_datetime(tmp["timestamp"], errors="coerce", utc=True)
+        tmp = tmp.dropna(subset=["timestamp"])
+        if not tmp.empty:
+            by_day = tmp.groupby(tmp["timestamp"].dt.date).size().reset_index(name="count")
+            for _, row in by_day.iterrows():
+                timeline_rows.append(
+                    {"day": str(row["timestamp"]), "count": int(row["count"]), "stream": "events"}
+                )
+
+    if not feed_df.empty and "timestamp" in feed_df.columns:
+        tmp = feed_df.copy()
+        tmp["timestamp"] = pd.to_datetime(tmp["timestamp"], errors="coerce", utc=True)
+        tmp = tmp.dropna(subset=["timestamp"])
+        if not tmp.empty:
+            by_day = tmp.groupby(tmp["timestamp"].dt.date).size().reset_index(name="count")
+            for _, row in by_day.iterrows():
+                timeline_rows.append(
+                    {"day": str(row["timestamp"]), "count": int(row["count"]), "stream": "keyword_feed"}
+                )
+
+    if not timeline_rows:
+        st.markdown('<div class="mini-note">Timeline appears after data ingestion.</div>', unsafe_allow_html=True)
+        return
+
+    tl_df = pd.DataFrame(timeline_rows)
+    fig = px.line(
+        tl_df,
+        x="day",
+        y="count",
+        color="stream",
+        markers=True,
+        template="plotly_dark",
+        title="Data Flow Timeline",
+    )
+    fig.update_layout(margin=dict(l=10, r=10, t=45, b=10), legend_title_text="")
+    st.plotly_chart(fig, width="stretch")
+
+
+def _run_progress(title: str, steps: list[tuple[int, str]], fun_mode: bool) -> None:
+    progress = st.progress(0, text=f"{title}: initializing")
+    with st.status(title, expanded=False) as status:
+        for pct, msg in steps:
+            progress.progress(int(pct), text=f"{title}: {msg}")
+            if fun_mode:
+                time.sleep(0.08)
+        status.update(label=f"{title} complete", state="complete")
+    progress.empty()
+
+
 def _init_state() -> None:
     st.session_state.setdefault("events_df", _empty_df(["event_id", "timestamp", "source", "actor", "description", "indicator_type", "indicator_value", "wallet"]))
     st.session_state.setdefault("keyword_feed_df", _empty_df(["timestamp", "source", "content"]))
@@ -56,6 +277,8 @@ def _init_state() -> None:
     st.session_state.setdefault("result", None)
     st.session_state.setdefault("research_prompt_text", "")
     st.session_state.setdefault("research_report", None)
+    st.session_state.setdefault("activity_log", [])
+    st.session_state.setdefault("fun_mode", True)
 
 
 def _load_demo() -> None:
@@ -102,22 +325,38 @@ def main() -> None:
 
     st.set_page_config(page_title="OSINT Research Agent", layout="wide")
     _init_state()
+    _inject_ui_theme()
 
     st.title("OSINT Research Agent Dashboard")
     st.caption("Compliance-first intelligence workflow for lawful, user-provided datasets.")
     st.warning(
         "This build does not include forced Tor rerouting, active onion crawling, or direct leak-database harvesting."
     )
+    _render_hero()
+    st.markdown('<div class="section-header">Live Telemetry</div>', unsafe_allow_html=True)
+    _render_reactive_timeline()
 
     with st.sidebar:
         st.header("Workspace")
+        st.toggle("Fun UI mode", key="fun_mode")
+        st.progress(_dataset_readiness_pct(), text=f"Dataset readiness: {_dataset_readiness_pct()}%")
         if st.button("Load Demo Data"):
             _load_demo()
+            _activity_log("Loaded demo datasets.")
+            if st.session_state.get("fun_mode", True):
+                st.toast("Demo data loaded", icon="🎯")
             st.success("Demo data loaded.")
         if st.button("Clear All Data"):
             _clear_all()
+            _activity_log("Cleared all session data.")
             st.success("Session data cleared.")
         st.text_input("Keywords (comma-separated)", key="keywords_text")
+        logs = st.session_state.get("activity_log", [])
+        st.markdown("### Activity")
+        if logs:
+            st.code("\n".join(logs[:8]))
+        else:
+            st.caption("No activity yet.")
 
     tabs = st.tabs(
         [
@@ -234,6 +473,17 @@ def main() -> None:
         if do_fetch_all or do_fetch_rss or do_fetch_nvd or do_fetch_cisa:
             rss_urls = [line.strip() for line in custom_rss.splitlines() if line.strip()]
             use_rss = do_fetch_all or do_fetch_rss or do_fetch_cisa
+            _run_progress(
+                "Live fetch",
+                [
+                    (12, "resolving connector plan"),
+                    (32, "initializing source adapters"),
+                    (62, "retrieving feeds and advisories"),
+                    (88, "normalizing and correlating"),
+                    (100, "publishing to workspace"),
+                ],
+                fun_mode=bool(st.session_state.get("fun_mode", True)),
+            )
             result = fetch_live_sources(
                 rss_urls=rss_urls if use_rss else [],
                 include_default_rss=include_default_rss and use_rss,
@@ -257,9 +507,17 @@ def main() -> None:
             st.success(
                 f"Live fetch complete. Events +{after_events - before_events}, keyword feed +{after_feed - before_feed}."
             )
+            _activity_log(
+                f"Live fetch completed: events +{after_events - before_events}, feed +{after_feed - before_feed}."
+            )
+            if st.session_state.get("fun_mode", True):
+                st.toast("Live feeds ingested", icon="🚀")
             if result.errors:
                 for err in result.errors:
                     st.warning(err)
+            if not result.common_points_df.empty:
+                st.markdown("Auto-detected common points")
+                st.dataframe(result.common_points_df, width="stretch")
             if not result.raw_items_df.empty:
                 st.markdown("Fetched RSS items preview")
                 st.dataframe(result.raw_items_df.head(20), width="stretch")
@@ -267,7 +525,7 @@ def main() -> None:
         st.divider()
         st.subheader("Optional public web scraping")
         st.caption("Scrape user-provided public URLs and ingest extracted text into events and keyword feed.")
-        st.info("Use only lawful targets. Respect website terms and robots rules.")
+        st.info("Use only lawful targets. Respect website terms; override robots.txt only when authorized.")
 
         scrape_col1, scrape_col2 = st.columns(2)
         with scrape_col1:
@@ -292,7 +550,9 @@ def main() -> None:
         with scrape_col2:
             scrape_follow_links = st.checkbox("Follow same-domain links", value=False)
             scrape_same_domain_only = st.checkbox("Restrict to same domain", value=True)
-            scrape_respect_robots = st.checkbox("Respect robots.txt", value=True)
+            scrape_ignore_robots = st.toggle(
+                "Ignore robots.txt restrictions", value=False, key="scrape_ignore_robots_txt"
+            )
             scrape_max_links_per_page = st.number_input(
                 "Max discovered links per page",
                 min_value=1,
@@ -316,11 +576,22 @@ def main() -> None:
             if not web_urls:
                 st.warning("Provide at least one URL to scrape.")
             else:
+                _run_progress(
+                    "Web scrape",
+                    [
+                        (10, "validating URL seeds"),
+                        (38, "fetching pages"),
+                        (72, "extracting text and links"),
+                        (92, "finding common points"),
+                        (100, "merging results"),
+                    ],
+                    fun_mode=bool(st.session_state.get("fun_mode", True)),
+                )
                 scrape_result = fetch_web_scrape_sources(
                     urls=web_urls,
                     follow_same_domain_links=scrape_follow_links,
                     same_domain_only=scrape_same_domain_only,
-                    respect_robots_txt=scrape_respect_robots,
+                    respect_robots_txt=not bool(scrape_ignore_robots),
                     max_pages=int(scrape_max_pages),
                     max_links_per_page=int(scrape_max_links_per_page),
                     max_chars=int(scrape_max_chars),
@@ -338,9 +609,17 @@ def main() -> None:
                 st.success(
                     f"Web scrape complete. Events +{after_events - before_events}, keyword feed +{after_feed - before_feed}."
                 )
+                _activity_log(
+                    f"Web scrape completed: events +{after_events - before_events}, feed +{after_feed - before_feed}."
+                )
+                if st.session_state.get("fun_mode", True):
+                    st.toast("Web scraping completed", icon="🕸️")
                 if scrape_result.errors:
                     for err in scrape_result.errors:
                         st.warning(err)
+                if not scrape_result.common_points_df.empty:
+                    st.markdown("Auto-detected common points")
+                    st.dataframe(scrape_result.common_points_df, width="stretch")
                 if not scrape_result.raw_items_df.empty:
                     st.markdown("Scraped page preview")
                     st.dataframe(scrape_result.raw_items_df.head(20), width="stretch")
@@ -349,6 +628,18 @@ def main() -> None:
         run = st.button("Run Analysis", type="primary")
         if run:
             keywords = [k.strip() for k in st.session_state.get("keywords_text", "").split(",") if k.strip()]
+            _run_progress(
+                "Analysis",
+                [
+                    (14, "loading in-memory datasets"),
+                    (30, "running keyword monitor"),
+                    (52, "mapping MITRE techniques"),
+                    (74, "profiling actors and clustering wallets"),
+                    (92, "building graph and leak fingerprint matches"),
+                    (100, "finalizing report tables"),
+                ],
+                fun_mode=bool(st.session_state.get("fun_mode", True)),
+            )
             result = agent.analyze(
                 events_df=st.session_state["events_df"],
                 keyword_feed_df=st.session_state["keyword_feed_df"],
@@ -358,6 +649,10 @@ def main() -> None:
                 observed_hashes_df=st.session_state["observed_hashes_df"],
             )
             st.session_state["result"] = result
+            _activity_log("Ran full analysis pipeline.")
+            if st.session_state.get("fun_mode", True):
+                st.toast("Analysis complete", icon="✅")
+                st.balloons()
             st.success("Analysis complete.")
 
         st.write("Current events preview")
@@ -440,6 +735,16 @@ def main() -> None:
             summary_text = st.text_area("Executive summary text", value=summary_default, height=120)
 
             if st.button("Generate PDF Brief"):
+                _run_progress(
+                    "PDF brief",
+                    [
+                        (20, "assembling executive summary"),
+                        (55, "rendering intelligence sections"),
+                        (85, "writing PDF output"),
+                        (100, "ready for download"),
+                    ],
+                    fun_mode=bool(st.session_state.get("fun_mode", True)),
+                )
                 ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
                 output_path = Path("outputs") / f"intelligence_brief_{ts}.pdf"
                 generated = generate_pdf_brief(
@@ -459,6 +764,9 @@ def main() -> None:
                         file_name=Path(generated).name,
                         mime="application/pdf",
                     )
+                _activity_log(f"Generated PDF brief: {Path(generated).name}")
+                if st.session_state.get("fun_mode", True):
+                    st.toast("PDF brief generated", icon="📄")
 
     with tabs[5]:
         st.subheader("Custom AI Research Agent")
@@ -497,6 +805,20 @@ def main() -> None:
             ra_use_ddg = st.checkbox("Use DuckDuckGo web search", value=True)
             ra_use_wiki = st.checkbox("Use Wikipedia search", value=True)
             ra_scrape_pages = st.checkbox("Scrape collected source pages", value=True)
+            ra_auto_expand_common = st.checkbox("Auto-expand from common points", value=True)
+            ra_max_followup = st.number_input(
+                "Max follow-up queries from common points",
+                min_value=0,
+                max_value=8,
+                value=2,
+                step=1,
+                key="ra_max_followup_queries",
+            )
+            ra_ignore_robots = st.toggle(
+                "Ignore robots.txt restrictions (research scrape)",
+                value=False,
+                key="ra_ignore_robots_txt",
+            )
 
         if st.button("Run AI Research"):
             if not prompt.strip():
@@ -504,6 +826,17 @@ def main() -> None:
             elif not ra_use_ddg and not ra_use_wiki:
                 st.warning("Enable at least one search source.")
             else:
+                _run_progress(
+                    "AI research",
+                    [
+                        (12, "expanding prompt into search queries"),
+                        (36, "retrieving source results"),
+                        (62, "optionally scraping pages"),
+                        (82, "finding common points"),
+                        (100, "writing summary and findings"),
+                    ],
+                    fun_mode=bool(st.session_state.get("fun_mode", True)),
+                )
                 research_agent = AutonomousResearchAgent(timeout=int(ra_timeout))
                 report = research_agent.run(
                     prompt=prompt.strip(),
@@ -514,8 +847,16 @@ def main() -> None:
                     include_duckduckgo=bool(ra_use_ddg),
                     include_wikipedia=bool(ra_use_wiki),
                     scrape_pages=bool(ra_scrape_pages) and int(ra_max_pages) > 0,
+                    respect_robots_txt=not bool(ra_ignore_robots),
+                    auto_expand_common_points=bool(ra_auto_expand_common),
+                    max_followup_queries=int(ra_max_followup),
                 )
                 st.session_state["research_report"] = report
+                _activity_log(
+                    f"AI research executed: {len(report.sources_df)} sources, {len(report.pages_df)} pages."
+                )
+                if st.session_state.get("fun_mode", True):
+                    st.toast("Research report updated", icon="🤖")
                 st.success("AI research run completed.")
 
         report = st.session_state.get("research_report")
@@ -549,6 +890,10 @@ def main() -> None:
             if not report.pages_df.empty:
                 st.markdown("Scraped Page Excerpts")
                 st.dataframe(report.pages_df.head(20), width="stretch")
+
+            if not report.common_points_df.empty:
+                st.markdown("Auto-detected Common Points")
+                st.dataframe(report.common_points_df, width="stretch")
 
             if report.errors:
                 st.markdown("Warnings / Errors")

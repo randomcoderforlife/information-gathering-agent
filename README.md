@@ -8,6 +8,8 @@ A modular Python threat-intelligence application with a Streamlit GUI dashboard.
 - Live feed ingestion from legal/public sources (RSS, NVD CVE API, CISA KEV advisory feed)
 - Optional public-web scraping for user-provided URLs
 - Prompt-driven custom AI research agent with autonomous web search and summarization
+- Automatic common-point discovery across fetched data (shared CVEs, domains, IPs, URLs, MITRE IDs, and key terms)
+- Reactive animated dashboard UI (themed command center, timeline charts, progress workflows, toasts/activity log)
 - Keyword monitoring (user-provided feeds)
 - Threat-actor profiling
 - MITRE ATT&CK keyword mapping
@@ -52,6 +54,7 @@ In the `Ingestion` tab, use the **Live feed connectors** section to pull:
 - Optional public web-page scraping from user-provided URLs (with `robots.txt` respect toggle)
 
 The fetched data is normalized into the existing `events_df` and `keyword_feed_df` datasets.
+The dashboard also auto-detects common points across fetched records to help correlation.
 
 Optional environment variable:
 
@@ -62,7 +65,8 @@ Web scraping connector behavior:
 - Accepts only user-provided `http(s)` URLs
 - Extracts visible page text and metadata
 - Supports optional same-domain link following with crawl limits
-- Supports optional `robots.txt` enforcement
+- Supports optional `robots.txt` enforcement, with an explicit UI toggle to ignore when needed
+- Auto-detects common points in scraped content
 
 ## Custom AI research agent
 
@@ -75,7 +79,22 @@ In the dashboard `AI Research Agent` tab:
   - generated sub-queries
   - source table
   - optional scraped page excerpts
+  - auto-detected common points
   - synthesized summary and key findings
+- Optional auto-expansion: when needed, the agent can generate follow-up searches from discovered common points.
+
+## Reactive UI features
+
+- Animated command-center header with live readiness metrics
+- Ingestion telemetry line chart (events/feed over time)
+- Progress/status workflows for:
+  - live feed fetch
+  - web scraping
+  - full analysis
+  - AI research
+  - PDF brief generation
+- Sidebar activity log with recent actions
+- Optional `Fun UI mode` toggle for animated delays and celebratory effects
 
 ## CSV schemas
 

@@ -11,6 +11,7 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import requests
 
+from osint_agent.modules.common_points import build_common_points_from_frames
 from osint_agent.modules.live_feeds import DEFAULT_TIMEOUT, DEFAULT_USER_AGENT, fetch_web_pages
 
 
@@ -77,6 +78,7 @@ class ResearchReport:
     findings: list[str]
     sources_df: pd.DataFrame
     pages_df: pd.DataFrame
+    common_points_df: pd.DataFrame
     errors: list[str]
 
 
@@ -95,6 +97,9 @@ class AutonomousResearchAgent:
         include_duckduckgo: bool = True,
         include_wikipedia: bool = True,
         scrape_pages: bool = True,
+        respect_robots_txt: bool = True,
+        auto_expand_common_points: bool = True,
+        max_followup_queries: int = 2,
     ) -> ResearchReport:
         query_text = str(prompt or "").strip()
         if not query_text:
@@ -105,6 +110,7 @@ class AutonomousResearchAgent:
                 findings=[],
                 sources_df=self._empty_sources_df(),
                 pages_df=self._empty_pages_df(),
+                common_points_df=self._empty_common_points_df(),
                 errors=["Prompt is empty."],
             )
 
@@ -113,23 +119,51 @@ class AutonomousResearchAgent:
         source_rows: list[dict[str, str]] = []
 
         for query in queries:
-            if include_duckduckgo:
-                ddg_rows, ddg_errors = self.search_duckduckgo(query, max_results=max_results_per_query)
-                source_rows.extend(ddg_rows)
-                errors.extend(ddg_errors)
-            if include_wikipedia:
-                wiki_rows, wiki_errors = self.search_wikipedia(query, max_results=max_results_per_query)
-                source_rows.extend(wiki_rows)
-                errors.extend(wiki_errors)
+            rows, local_errors = self._search_query(
+                query=query,
+                max_results=max_results_per_query,
+                include_duckduckgo=include_duckduckgo,
+                include_wikipedia=include_wikipedia,
+            )
+            source_rows.extend(rows)
+            errors.extend(local_errors)
 
         sources_df = self._dedupe_sources(source_rows, max_total=max_total_results)
+        common_min_support = 2 if len(sources_df) >= 2 else 1
+        common_points_df = build_common_points_from_frames(
+            sources_df=sources_df,
+            min_support=common_min_support,
+            top_n=40,
+        )
+
+        # If initial coverage is limited, expand with follow-up queries from shared points.
+        if auto_expand_common_points and len(sources_df) < max(6, max_total_results // 2):
+            followups = self._build_followup_queries(
+                prompt=query_text,
+                common_points_df=common_points_df,
+                limit=max_followup_queries,
+            )
+            for query in followups:
+                if query in queries:
+                    continue
+                queries.append(query)
+                rows, local_errors = self._search_query(
+                    query=query,
+                    max_results=max_results_per_query,
+                    include_duckduckgo=include_duckduckgo,
+                    include_wikipedia=include_wikipedia,
+                )
+                source_rows.extend(rows)
+                errors.extend(local_errors)
+            sources_df = self._dedupe_sources(source_rows, max_total=max_total_results)
+
         pages_df = self._empty_pages_df()
         if scrape_pages and not sources_df.empty:
             scrape_df, scrape_errors = fetch_web_pages(
                 urls=sources_df["url"].tolist(),
                 follow_same_domain_links=False,
                 same_domain_only=True,
-                respect_robots_txt=True,
+                respect_robots_txt=respect_robots_txt,
                 max_pages=max_pages_to_scrape,
                 max_links_per_page=1,
                 max_chars=5000,
@@ -139,6 +173,13 @@ class AutonomousResearchAgent:
             pages_df = scrape_df
             errors.extend(scrape_errors)
 
+        common_min_support = 2 if (len(sources_df) + len(pages_df)) >= 2 else 1
+        common_points_df = build_common_points_from_frames(
+            sources_df=sources_df,
+            pages_df=pages_df,
+            min_support=common_min_support,
+            top_n=40,
+        )
         summary, findings = self.summarize_research(query_text, sources_df, pages_df)
         return ResearchReport(
             prompt=query_text,
@@ -147,8 +188,55 @@ class AutonomousResearchAgent:
             findings=findings,
             sources_df=sources_df,
             pages_df=pages_df,
+            common_points_df=common_points_df,
             errors=errors,
         )
+
+    def _search_query(
+        self,
+        query: str,
+        max_results: int,
+        include_duckduckgo: bool,
+        include_wikipedia: bool,
+    ) -> tuple[list[dict[str, str]], list[str]]:
+        rows: list[dict[str, str]] = []
+        errors: list[str] = []
+        if include_duckduckgo:
+            ddg_rows, ddg_errors = self.search_duckduckgo(query, max_results=max_results)
+            rows.extend(ddg_rows)
+            errors.extend(ddg_errors)
+        if include_wikipedia:
+            wiki_rows, wiki_errors = self.search_wikipedia(query, max_results=max_results)
+            rows.extend(wiki_rows)
+            errors.extend(wiki_errors)
+        return (rows, errors)
+
+    def _build_followup_queries(
+        self,
+        prompt: str,
+        common_points_df: pd.DataFrame,
+        limit: int,
+    ) -> list[str]:
+        if common_points_df.empty or limit <= 0:
+            return []
+
+        priority = ["cve", "mitre_technique", "domain", "ip", "keyword"]
+        followups: list[str] = []
+        seen_values: set[str] = set()
+        for point_type in priority:
+            frame = common_points_df[common_points_df["point_type"] == point_type]
+            for _, row in frame.iterrows():
+                value = str(row.get("value", "")).strip()
+                if not value:
+                    continue
+                value_key = value.lower()
+                if value_key in seen_values:
+                    continue
+                seen_values.add(value_key)
+                followups.append(f"{prompt} {value}")
+                if len(followups) >= limit:
+                    return followups
+        return followups
 
     def generate_queries(self, prompt: str, max_queries: int = 4) -> list[str]:
         prompt = str(prompt).strip()
@@ -376,3 +464,5 @@ class AutonomousResearchAgent:
     def _empty_pages_df(self) -> pd.DataFrame:
         return pd.DataFrame(columns=["timestamp", "source", "title", "summary", "link", "entry_id"])
 
+    def _empty_common_points_df(self) -> pd.DataFrame:
+        return pd.DataFrame(columns=["point_type", "value", "support", "evidence"])
