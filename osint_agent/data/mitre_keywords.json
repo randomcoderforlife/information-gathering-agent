@@ -1,0 +1,50 @@
+[
+  {
+    "keyword": "phishing",
+    "tactic": "Initial Access",
+    "technique_id": "T1566",
+    "technique_name": "Phishing"
+  },
+  {
+    "keyword": "credential",
+    "tactic": "Credential Access",
+    "technique_id": "T1110",
+    "technique_name": "Brute Force"
+  },
+  {
+    "keyword": "powershell",
+    "tactic": "Execution",
+    "technique_id": "T1059.001",
+    "technique_name": "PowerShell"
+  },
+  {
+    "keyword": "ransom",
+    "tactic": "Impact",
+    "technique_id": "T1486",
+    "technique_name": "Data Encrypted for Impact"
+  },
+  {
+    "keyword": "c2",
+    "tactic": "Command and Control",
+    "technique_id": "T1071",
+    "technique_name": "Application Layer Protocol"
+  },
+  {
+    "keyword": "exfiltration",
+    "tactic": "Exfiltration",
+    "technique_id": "T1041",
+    "technique_name": "Exfiltration Over C2 Channel"
+  },
+  {
+    "keyword": "lateral movement",
+    "tactic": "Lateral Movement",
+    "technique_id": "T1021",
+    "technique_name": "Remote Services"
+  },
+  {
+    "keyword": "scheduled task",
+    "tactic": "Persistence",
+    "technique_id": "T1053.005",
+    "technique_name": "Scheduled Task"
+  }
+]
