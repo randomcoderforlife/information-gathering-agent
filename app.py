@@ -193,9 +193,25 @@ def main() -> None:
         live_col1, live_col2 = st.columns(2)
 
         with live_col1:
-            lookback_days = st.number_input("Lookback days", min_value=1, max_value=30, value=7, step=1)
-            max_rss_items = st.number_input("Max RSS items per feed", min_value=10, max_value=500, value=100, step=10)
-            nvd_max_results = st.number_input("NVD max CVEs", min_value=10, max_value=2000, value=200, step=10)
+            lookback_days = st.number_input(
+                "Lookback days", min_value=1, max_value=30, value=7, step=1, key="live_lookback_days"
+            )
+            max_rss_items = st.number_input(
+                "Max RSS items per feed",
+                min_value=10,
+                max_value=500,
+                value=100,
+                step=10,
+                key="live_max_rss_items",
+            )
+            nvd_max_results = st.number_input(
+                "NVD max CVEs",
+                min_value=10,
+                max_value=2000,
+                value=200,
+                step=10,
+                key="live_nvd_max_results",
+            )
             include_default_rss = st.checkbox("Include default CISA RSS URLs", value=True)
 
         with live_col2:
@@ -246,7 +262,7 @@ def main() -> None:
                     st.warning(err)
             if not result.raw_items_df.empty:
                 st.markdown("Fetched RSS items preview")
-                st.dataframe(result.raw_items_df.head(20), use_container_width=True)
+                st.dataframe(result.raw_items_df.head(20), width="stretch")
 
         st.divider()
         st.subheader("Optional public web scraping")
@@ -261,9 +277,16 @@ def main() -> None:
                 height=110,
                 help="Example: https://www.cisa.gov/news-events/cybersecurity-advisories",
             )
-            scrape_max_pages = st.number_input("Max pages to scrape", min_value=1, max_value=200, value=20, step=1)
+            scrape_max_pages = st.number_input(
+                "Max pages to scrape", min_value=1, max_value=200, value=20, step=1, key="scrape_max_pages"
+            )
             scrape_max_chars = st.number_input(
-                "Max text chars per page", min_value=500, max_value=20000, value=4000, step=500
+                "Max text chars per page",
+                min_value=500,
+                max_value=20000,
+                value=4000,
+                step=500,
+                key="scrape_max_chars",
             )
 
         with scrape_col2:
@@ -271,9 +294,21 @@ def main() -> None:
             scrape_same_domain_only = st.checkbox("Restrict to same domain", value=True)
             scrape_respect_robots = st.checkbox("Respect robots.txt", value=True)
             scrape_max_links_per_page = st.number_input(
-                "Max discovered links per page", min_value=1, max_value=50, value=8, step=1
+                "Max discovered links per page",
+                min_value=1,
+                max_value=50,
+                value=8,
+                step=1,
+                key="scrape_max_links_per_page",
             )
-            scrape_timeout = st.number_input("HTTP timeout (seconds)", min_value=5, max_value=90, value=25, step=5)
+            scrape_timeout = st.number_input(
+                "HTTP timeout (seconds)",
+                min_value=5,
+                max_value=90,
+                value=25,
+                step=5,
+                key="scrape_http_timeout_sec",
+            )
 
         do_scrape = st.button("Scrape Web URLs")
         if do_scrape:
@@ -308,7 +343,7 @@ def main() -> None:
                         st.warning(err)
                 if not scrape_result.raw_items_df.empty:
                     st.markdown("Scraped page preview")
-                    st.dataframe(scrape_result.raw_items_df.head(20), use_container_width=True)
+                    st.dataframe(scrape_result.raw_items_df.head(20), width="stretch")
 
         st.divider()
         run = st.button("Run Analysis", type="primary")
@@ -326,7 +361,7 @@ def main() -> None:
             st.success("Analysis complete.")
 
         st.write("Current events preview")
-        st.dataframe(st.session_state["events_df"].head(10), use_container_width=True)
+        st.dataframe(st.session_state["events_df"].head(10), width="stretch")
 
     with tabs[1]:
         st.subheader("Analysis outputs")
@@ -342,9 +377,9 @@ def main() -> None:
             metric_cols[4].metric("Leak Matches", len(result.leak_matches))
 
             st.markdown("Keyword hits")
-            st.dataframe(result.keyword_hits, use_container_width=True)
+            st.dataframe(result.keyword_hits, width="stretch")
             st.markdown("Leak fingerprint matches")
-            st.dataframe(result.leak_matches, use_container_width=True)
+            st.dataframe(result.leak_matches, width="stretch")
 
     with tabs[2]:
         st.subheader("Threat-actor profiling and ATT&CK mapping")
@@ -355,10 +390,10 @@ def main() -> None:
             left, right = st.columns(2)
             with left:
                 st.markdown("Actor profiles")
-                st.dataframe(result.actor_profiles, use_container_width=True)
+                st.dataframe(result.actor_profiles, width="stretch")
             with right:
                 st.markdown("MITRE ATT&CK hits")
-                st.dataframe(result.mitre_hits, use_container_width=True)
+                st.dataframe(result.mitre_hits, width="stretch")
                 if not result.mitre_hits.empty:
                     tactic_counts = result.mitre_hits.groupby("tactic").size().reset_index(name="count")
                     st.bar_chart(tactic_counts, x="tactic", y="count")
@@ -370,10 +405,10 @@ def main() -> None:
             st.info("Run analysis first.")
         else:
             st.markdown("Wallet clusters")
-            st.dataframe(result.wallet_clusters, use_container_width=True)
+            st.dataframe(result.wallet_clusters, width="stretch")
 
             fig = graph_to_plotly(result.knowledge_graph)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
             st.divider()
             st.markdown("Optional: push graph to Neo4j")
@@ -438,14 +473,27 @@ def main() -> None:
 
         ra_col1, ra_col2 = st.columns(2)
         with ra_col1:
-            ra_max_queries = st.number_input("Max generated queries", min_value=1, max_value=8, value=4, step=1)
-            ra_results_per_query = st.number_input(
-                "Results per query", min_value=1, max_value=10, value=5, step=1
+            ra_max_queries = st.number_input(
+                "Max generated queries", min_value=1, max_value=8, value=4, step=1, key="ra_max_queries"
             )
-            ra_max_total = st.number_input("Max total sources", min_value=5, max_value=80, value=20, step=1)
-            ra_max_pages = st.number_input("Max pages to scrape", min_value=0, max_value=40, value=10, step=1)
+            ra_results_per_query = st.number_input(
+                "Results per query", min_value=1, max_value=10, value=5, step=1, key="ra_results_per_query"
+            )
+            ra_max_total = st.number_input(
+                "Max total sources", min_value=5, max_value=80, value=20, step=1, key="ra_max_total_sources"
+            )
+            ra_max_pages = st.number_input(
+                "Max pages to scrape", min_value=0, max_value=40, value=10, step=1, key="ra_max_pages"
+            )
         with ra_col2:
-            ra_timeout = st.number_input("HTTP timeout (seconds)", min_value=5, max_value=90, value=25, step=5)
+            ra_timeout = st.number_input(
+                "HTTP timeout (seconds)",
+                min_value=5,
+                max_value=90,
+                value=25,
+                step=5,
+                key="ra_http_timeout_sec",
+            )
             ra_use_ddg = st.checkbox("Use DuckDuckGo web search", value=True)
             ra_use_wiki = st.checkbox("Use Wikipedia search", value=True)
             ra_scrape_pages = st.checkbox("Scrape collected source pages", value=True)
@@ -496,11 +544,11 @@ def main() -> None:
             metric_cols[2].metric("Warnings", len(report.errors))
 
             st.markdown("Source Results")
-            st.dataframe(report.sources_df, use_container_width=True)
+            st.dataframe(report.sources_df, width="stretch")
 
             if not report.pages_df.empty:
                 st.markdown("Scraped Page Excerpts")
-                st.dataframe(report.pages_df.head(20), use_container_width=True)
+                st.dataframe(report.pages_df.head(20), width="stretch")
 
             if report.errors:
                 st.markdown("Warnings / Errors")
